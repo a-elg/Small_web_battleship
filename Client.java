@@ -39,11 +39,23 @@ public class Client {
         int boatsSet;
         JButton[][] MyButtonMatrix;
         boolean Myturn;
+        int[][] MyState;// To know if a square has a ship, and if it has been used
+            /*
+             * 0=Button not used
+             * 1=Alive
+             * 2=Dead
+             * 3=Missed
+             */
 
     JFrame Enemyboard;
         int EnemyRemainingSquares;
         JButton[][] EnemyButtonMatrix;
-        short[][][] EnemyState;
+        int[][] EnemyState;// To know if a square has a ship, and if it has been used
+            /*
+             * 0=Button not used
+             * 1=Miss
+             * 2=Hit
+             */
 
     final int h_buttons=10+1;
     final int v_buttons=10+1;
@@ -61,6 +73,7 @@ public class Client {
 
     public void SetMyBoard(){
         MyRemainingSquares=21;
+        MyState=new int[v_buttons][h_buttons];
         int length=500;
 		int height=500;
         Myboard=new JFrame("My territory");
@@ -71,6 +84,7 @@ public class Client {
             for(int j=0;j!=h_buttons;j++){
                 final int i_aux=i;
                 final int j_aux=j;
+                MyState[i][j]=0;
                 MyButtonMatrix[i][j]=new JButton();
                 MyButtonMatrix[i][j].setBackground(Color.decode(Blues[Math.abs(RN.nextInt())%Blues.length]));
                 MyButtonMatrix[i][j].setFocusPainted(false);
@@ -158,13 +172,18 @@ public class Client {
                     public void actionPerformed(ActionEvent av) {
                         JButton b=(JButton)av.getSource();
                         if(Shot(EnemyButtonMap.get(EnemyButtonMatrix[i_aux][j_aux]).getValue0(),EnemyButtonMap.get(EnemyButtonMatrix[i_aux][j_aux]).getValue1())){
+                            EnemyRemainingSquares--;
                             b.setIcon(new ImageIcon("./Boom.png"));
                             b.setBackground(Color.decode("#70301e"));
+                            EnemyState[i_aux][j_aux]=2;
                         }else{
                             Color C=b.getBackground();
                             b.setBackground(new Color(Math.abs(C.getRed()-70),Math.abs(C.getGreen()-70),Math.abs(C.getBlue()-70)));
+                            EnemyState[i_aux][j_aux]=1;
                         }
-                        b.setEnabled(false);
+                        DisableBoard();
+                        RecieveShot();
+                        GameEnded();
                     }
                 });
                 EnemyButtonMap.put(EnemyButtonMatrix[i][j],Pair.with(i,j));
@@ -202,7 +221,18 @@ public class Client {
             MySocket=new Socket(Address,Port);
             ObjectOutputStream oos=new ObjectOutputStream(MySocket.getOutputStream());
             ObjectInputStream ois=new ObjectInputStream(MySocket.getInputStream());
-            oos.writeObject(new Movement(0,0,0));
+            Myturn=RN.nextBoolean();
+            JOptionPane.showMessageDialog(new JFrame("Who starts"), (Myturn)?"You start":"Enemy starts");
+            oos.writeObject(new Message(0,0,(Myturn)?1:0));
+            oos.flush();
+            MySocket.close();
+            if(Myturn){
+                EnableBoard();
+            }else{
+                DisableBoard();
+                RecieveFirstShot();
+            }
+
         } catch (Exception e) {
             System.exit(1);
         }
@@ -210,8 +240,12 @@ public class Client {
 
     public boolean Shot(int v,int h){
         try {
-            //MySocket=new Socket(Address,Port);
-            return true;
+            MySocket=new Socket(Address,Port);
+            ObjectOutputStream oos=new ObjectOutputStream(MySocket.getOutputStream());
+            ObjectInputStream ois=new ObjectInputStream(MySocket.getInputStream());
+            oos.writeObject(new Message(v,h,1));
+            Answer ans=(Answer)ois.readObject();
+            return ans.result;
         } catch (Exception e) {
             e.printStackTrace();
             return false;
@@ -221,7 +255,7 @@ public class Client {
     public void SetMyShips() {
         boatsSet=0;
         V_H_Options=new JFrame();
-        V_H_Options.setSize(230,200);
+        V_H_Options.setSize(300,200);
         V_H_Options.setLayout(null);
         V_H_Options.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         //V_H_Options.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -230,15 +264,15 @@ public class Client {
         
         OptionH=new JRadioButton("Horizontal"); OptionH.setSelected(true);
         OptionV=new JRadioButton("Vertical");
-        OptionH.setBounds(20,80,100,30);
-        OptionV.setBounds(120,80,100,30);
+        OptionH.setBounds(50,90,100,30);
+        OptionV.setBounds(150,90,100,30);
         
         ButtonGroup bg=new ButtonGroup();
             bg.add(OptionH);
             bg.add(OptionV);
         
         JTextArea Instructions=new JTextArea("Select whether you prefer, vertical or horizontal.");
-           Instructions.setBounds(20,10,180,60);
+           Instructions.setBounds(50,20,180,60);
            Instructions.setLineWrap(true);
            Instructions.setEnabled(false);
            Instructions.setBackground(new Color(0,0,0,0));
@@ -255,12 +289,12 @@ public class Client {
     }
 
     public void BlockFromTo(int y,int x,Boolean H_V,int squares){
-        boolean ok_choose=false;
         if(H_V){//Horizontal choose
             if(x+squares>h_buttons){
                 boatsSet--;
                 return;
             }
+            // Makes sure that the squares are not already occupied
             for(int j=0;j!=squares;j++)
                 if(!MyButtonMatrix[y][x+j].isEnabled()){
                     boatsSet--;
@@ -269,6 +303,7 @@ public class Client {
             for(int j=0;j!=squares;j++){
                 MyButtonMatrix[y][x+j].setBackground(new Color(00+boatsSet*25,01+boatsSet*25,50+boatsSet*25));
                 MyButtonMatrix[y][x+j].setEnabled(false);
+                MyState[y][x+j]=1;
             }
         }
         else{//Vertical Choose
@@ -284,8 +319,73 @@ public class Client {
             for(int j=0;j!=squares;j++){
                 MyButtonMatrix[y+j][x].setBackground(new Color(00+boatsSet*25,01+boatsSet*25,50+boatsSet*25));
                 MyButtonMatrix[y+j][x].setEnabled(false);
+                MyState[y+j][x]=0;
             }
         }
     }
 
+    public void DisableBoard() {
+        for(int i=0;i!=v_buttons;i++)
+            for(int j=0;j!=h_buttons;j++)
+                EnemyButtonMatrix[i][j].setEnabled(false);
+    }
+    
+    public void EnableBoard() {
+        for(int i=0;i!=v_buttons;i++)
+            for(int j=0;j!=h_buttons;j++){
+                if(EnemyState[i][j]!=0)
+                    EnemyButtonMatrix[i][j].setEnabled(false);
+                else
+                    EnemyButtonMatrix[i][j].setEnabled(true);
+            }
+    }
+
+    public boolean GameEnded() {
+        if (EnemyRemainingSquares==0){
+            JOptionPane.showMessageDialog(new JFrame("Game Over"), "You Won!");
+            return true;
+        }
+        else if (MyRemainingSquares==0){
+            JOptionPane.showMessageDialog(new JFrame("Game Over"), "You Lost!");
+            return true;
+        }
+        return false;
+    }
+
+    public void RecieveFirstShot() {
+        try {
+            MySocket=new Socket(Address,Port);
+            ObjectOutputStream oos=new ObjectOutputStream(MySocket.getOutputStream());
+            ObjectInputStream ois=new ObjectInputStream(MySocket.getInputStream());
+            oos.writeObject(new Message(0, 0, 2));
+            oos.flush();
+            //I am ready to recieve the first shot
+            RecieveShot();        
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void RecieveShot() {
+        try {
+            ObjectOutputStream oos=new ObjectOutputStream(MySocket.getOutputStream());
+            ObjectInputStream ois=new ObjectInputStream(MySocket.getInputStream());
+            
+            Message M=(Message)ois.readObject();
+            if(MyState[M.y][M.x]==1){
+                MyState[M.y][M.x]=2;
+                MyButtonMatrix[M.y][M.x].setBackground(new Color(0,0,0));
+                MyRemainingSquares--;
+                oos.writeObject(new Answer(true));
+            }
+            else{
+                MyState[M.y][M.x]=3;
+                MyButtonMatrix[M.y][M.x].setBackground(new Color(255,255,255));
+                oos.writeObject(new Answer(false));
+            }
+            EnableBoard();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }
