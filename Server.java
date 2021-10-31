@@ -6,8 +6,10 @@ import org.javatuples.Pair;
 
 public class Server {
     private ServerSocket SS;
-        private final int Port=8090;
+        final int Port=8132;
     private Socket Client;
+        private ObjectInputStream ois;
+        private ObjectOutputStream oos;
 
     private boolean[][] VirtualBoard;
     private int[][] UsedButtons;// 0: Empty,1: Used and Missed,2: Used and Hit
@@ -22,9 +24,9 @@ public class Server {
     final int h_buttons=10+1;
     final int v_buttons=10+1;
     
-    public static void main(String[] args) {new Server().StartServer(5000);}
+    public static void main(String[] args) {new Server().StartServer();}
 
-    private void StartServer(int Port) {
+    private void StartServer() {
         try {
             SS=new ServerSocket(Port);
             System.out.println("Server On.");
@@ -38,7 +40,10 @@ public class Server {
         try {
             while(true) {
                 Client=SS.accept();
+                System.out.println("Client Connected");
                 ProcessRequest();
+                //Client.close();
+                System.out.println("Client attended");
             }
             //System.out.println("Se acabo");
         }
@@ -47,21 +52,22 @@ public class Server {
 
     private void ProcessRequest() {
         try {
-            ObjectInputStream dis=new ObjectInputStream(Client.getInputStream());
-            Message message=(Message)dis.readObject();
+            System.out.println("Processing request");
+            ois=new ObjectInputStream(Client.getInputStream());
+            Message message=(Message)ois.readObject();
+            System.out.println("x:"+message.x+",y:"+message.y+",T:"+message.Type);
             switch (message.Type) {
                 case 0:// Initialize
+                    System.out.println("Initiating game");
                     SetNewGame();
                     break;
                 case 1://Recieve a shot
+                    System.out.println("Recieving a shot");
                     GiveFeedback(message.y,message.x);
-                    if((remainingSquares<=0)||(checkedSquares>=99)) 
-                        break;
-                    Load();//Shot back
-
                     break;
 
-                case 2://Make first shot
+                case 2://Shot
+                    System.out.println("Shotting");
                     Load();
                     break;
 
@@ -93,17 +99,17 @@ public class Server {
         System.out.println("     x    ");
         System.out.println("");
         System.out.print("   ");
-        for(int i=0;i!=11;i++){
+        for(int i=1;i!=11;i++){
             System.out.print(Integer.toHexString(i));
         }
         System.out.println("");
-        for(int i=0;i!=v_buttons;i++){
+        for(int i=1;i!=v_buttons;i++){
             if(i==5)
                 System.out.print("y");
             else
                 System.out.print(" ");
             System.out.print(" "+Integer.toHexString(i));
-            for(int j=0;j!=h_buttons;j++){
+            for(int j=1;j!=h_buttons;j++){
                 if(VirtualBoard[i][j])
                     System.out.print("1");
                 else
@@ -177,6 +183,7 @@ public class Server {
         do{
             switch (NextDirection) {
                 case -1:
+                    System.out.println("case -1");
                     do{
                         y=(Math.abs(RN.nextInt())%(v_buttons-1))+1;
                         x=(Math.abs(RN.nextInt())%(h_buttons-1))+1;
@@ -193,9 +200,10 @@ public class Server {
                         UsedButtons[y][x]=1;
                         streak=0;
                     }
-
+                    Trying_to_shot=false;
                     break;
                 case 0:
+                    System.out.println("case 0");
                     if(Bound2.getValue0()+1<v_buttons){//Out of bound?
                         if(UsedButtons[Bound2.getValue0()+1][Bound2.getValue1()]!=0){//Already shot?
                             NextDirection=1;
@@ -218,6 +226,7 @@ public class Server {
                         NextDirection=1;
                     break;
                 case 1:
+                    System.out.println("case 1");
                     if(Bound1.getValue0()-1>0){//Out of bound?
                         if(UsedButtons[Bound1.getValue0()-1][Bound1.getValue1()]!=0){//Already shot?
                             if(streak>1)//If streak is more than 1, try to shoot in the other square
@@ -252,6 +261,7 @@ public class Server {
                     }   
                     break;
                 case 2:
+                    System.out.println("case 2");
                     if(Bound2.getValue1()+1<h_buttons){//Out of bound?
                         if(UsedButtons[Bound2.getValue0()][Bound2.getValue1()+1]!=0){//Already shot?
                             NextDirection=3;
@@ -275,6 +285,7 @@ public class Server {
                     }
                     break;
                 case 3:
+                    System.out.println("case 3");
                     if(Bound1.getValue1()-1>0){//Out of bound?
                         if(UsedButtons[Bound1.getValue0()][Bound1.getValue1()-1]!=0){//Already shot?
                             NextDirection=-1;
@@ -304,10 +315,11 @@ public class Server {
     private boolean Shot(int y,int x){
         System.out.print("\nShoting... y:"+y+" x:"+x+" ");
         try {
-            ObjectOutputStream dos=new ObjectOutputStream(Client.getOutputStream());
-            dos.writeObject(new Message(y,x,1));
-            ObjectInputStream dis=new ObjectInputStream(Client.getInputStream());
-            Answer ans=(Answer)dis.readObject();
+            oos=new ObjectOutputStream(Client.getOutputStream());
+            oos.writeObject(new Message(y,x,1));
+            oos.flush();
+            Answer ans=(Answer)ois.readObject();
+            ois.close();
             if (ans.result){
                 System.out.print("Hit");
                 remainingSquares--;
@@ -327,43 +339,11 @@ public class Server {
 
     private void GiveFeedback(int y,int x){
         try {
-            ObjectOutputStream dos=new ObjectOutputStream(Client.getOutputStream());
-            dos.writeObject(new Answer(VirtualBoard[y][x]));
+            oos=new ObjectOutputStream(Client.getOutputStream());
+            oos.writeObject(new Answer(VirtualBoard[y][x]));
+            oos.flush();
         } catch (Exception e) {
             System.out.println("Failed to give feedback...");
-            e.printStackTrace();
-            System.exit(0);
-        }
-    }
-
-    private void FirstShot(){
-        int y=(Math.abs(RN.nextInt())%(v_buttons-1))+1;
-        int x=(Math.abs(RN.nextInt())%(h_buttons-1))+1;
-        try {
-            ObjectOutputStream dos=new ObjectOutputStream(Client.getOutputStream());
-            dos.writeObject(new Message(y,x,1));
-            ObjectInputStream dis=new ObjectInputStream(Client.getInputStream());
-            Answer ans=(Answer)dis.readObject();
-            if (ans.result){
-                System.out.print("Hit");
-                remainingSquares--;
-                NextDirection=0;
-                Bound1=new Pair<>(y,x);
-                Bound2=new Pair<>(y,x);
-                UsedButtons[y][x]=2;
-                streak=1;        
-                
-            }
-            else{
-                UsedButtons[y][x]=1;
-                streak=0;
-                System.out.print("Miss");
-                NextDirection=-1;
-            }
-            checkedSquares++;
-
-        } catch (Exception e) {
-            System.out.println("Failed to give first shot...");
             e.printStackTrace();
             System.exit(0);
         }

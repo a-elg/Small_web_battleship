@@ -29,7 +29,9 @@ public class Client {
     
     Socket MySocket;
         final String Address="127.0.0.1";
-        final int Port=8090;
+        final int Port=8132;
+        ObjectInputStream ois;
+        ObjectOutputStream oos;
 
     JFrame Myboard;
         int MyRemainingSquares;
@@ -38,7 +40,7 @@ public class Client {
             JRadioButton OptionV;
         int boatsSet;
         JButton[][] MyButtonMatrix;
-        boolean Myturn;
+        boolean Myturn; 
         int[][] MyState;// To know if a square has a ship, and if it has been used
             /*
              * 0=Button not used
@@ -91,7 +93,6 @@ public class Client {
                 MyButtonMatrix[i][j].addActionListener(new ActionListener() {
                     public void actionPerformed(ActionEvent av) {
                         int squares=4;
-                        boatsSet++;
                         JButton b=(JButton)av.getSource();
                         switch (boatsSet) {
                             case 1:
@@ -133,7 +134,7 @@ public class Client {
 
         for(int i=1;i!=h_buttons;i++){
             MyButtonMatrix[0][i].setText(String.valueOf(i));
-            MyButtonMatrix[0][i].setFont(new Font(" Serif",Font.PLAIN,9));
+            MyButtonMatrix[0][i].setFont(new Font("Serif",Font.PLAIN,9));
             MyButtonMatrix[0][i].setBackground(new Color(255,255,255));
             MyButtonMatrix[0][i].setEnabled(false);
         }
@@ -178,11 +179,15 @@ public class Client {
                             EnemyState[i_aux][j_aux]=2;
                         }else{
                             Color C=b.getBackground();
-                            b.setBackground(new Color(Math.abs(C.getRed()-70),Math.abs(C.getGreen()-70),Math.abs(C.getBlue()-70)));
+                            b.setBackground(new Color(Math.abs(C.getRed()-100),Math.abs(C.getGreen()-100),Math.abs(C.getBlue()-100)));
                             EnemyState[i_aux][j_aux]=1;
                         }
+                        System.out.println("Shot success");
                         DisableBoard();
+                        GameEnded();
+                        System.out.println("Waiting for shot back");
                         RecieveShot();
+                        System.out.println("Shot recieved");
                         GameEnded();
                     }
                 });
@@ -219,31 +224,32 @@ public class Client {
     public void StartGame() {
         try {
             MySocket=new Socket(Address,Port);
-            ObjectOutputStream oos=new ObjectOutputStream(MySocket.getOutputStream());
-            ObjectInputStream ois=new ObjectInputStream(MySocket.getInputStream());
+            oos=new ObjectOutputStream(MySocket.getOutputStream());
             Myturn=RN.nextBoolean();
             JOptionPane.showMessageDialog(new JFrame("Who starts"), (Myturn)?"You start":"Enemy starts");
-            oos.writeObject(new Message(0,0,(Myturn)?1:0));
+            oos.writeObject(new Message(0,0,0));
             oos.flush();
-            MySocket.close();
             if(Myturn){
+                System.out.println("My turn! Yay!");
                 EnableBoard();
             }else{
                 DisableBoard();
-                RecieveFirstShot();
+                RecieveShot();
             }
 
         } catch (Exception e) {
-            System.exit(1);
+            e.printStackTrace();
         }
     }
 
     public boolean Shot(int v,int h){
         try {
+            System.out.println("Shooting");
             MySocket=new Socket(Address,Port);
-            ObjectOutputStream oos=new ObjectOutputStream(MySocket.getOutputStream());
-            ObjectInputStream ois=new ObjectInputStream(MySocket.getInputStream());
+            oos=new ObjectOutputStream(MySocket.getOutputStream());
             oos.writeObject(new Message(v,h,1));
+            oos.flush();
+            ois=new ObjectInputStream(MySocket.getInputStream());
             Answer ans=(Answer)ois.readObject();
             return ans.result;
         } catch (Exception e) {
@@ -290,16 +296,14 @@ public class Client {
 
     public void BlockFromTo(int y,int x,Boolean H_V,int squares){
         if(H_V){//Horizontal choose
-            if(x+squares>h_buttons){
-                boatsSet--;
+            if(x+squares>h_buttons)
                 return;
-            }
+
             // Makes sure that the squares are not already occupied
             for(int j=0;j!=squares;j++)
-                if(!MyButtonMatrix[y][x+j].isEnabled()){
-                    boatsSet--;
+                if(!MyButtonMatrix[y][x+j].isEnabled())
                     return;
-                }
+    
             for(int j=0;j!=squares;j++){
                 MyButtonMatrix[y][x+j].setBackground(new Color(00+boatsSet*25,01+boatsSet*25,50+boatsSet*25));
                 MyButtonMatrix[y][x+j].setEnabled(false);
@@ -307,21 +311,20 @@ public class Client {
             }
         }
         else{//Vertical Choose
-            if(y+squares>v_buttons){
-                boatsSet--;
+            if(y+squares>v_buttons)
                 return;
-            }
+            
             for(int j=0;j!=squares;j++)
-                if(!MyButtonMatrix[y+j][x].isEnabled()){
-                    boatsSet--;
+                if(!MyButtonMatrix[y+j][x].isEnabled())
                     return;
-                }
+                
             for(int j=0;j!=squares;j++){
                 MyButtonMatrix[y+j][x].setBackground(new Color(00+boatsSet*25,01+boatsSet*25,50+boatsSet*25));
                 MyButtonMatrix[y+j][x].setEnabled(false);
-                MyState[y+j][x]=0;
+                MyState[y+j][x]=1;
             }
         }
+        boatsSet++;
     }
 
     public void DisableBoard() {
@@ -332,12 +335,9 @@ public class Client {
     
     public void EnableBoard() {
         for(int i=0;i!=v_buttons;i++)
-            for(int j=0;j!=h_buttons;j++){
-                if(EnemyState[i][j]!=0)
-                    EnemyButtonMatrix[i][j].setEnabled(false);
-                else
+            for(int j=0;j!=h_buttons;j++)
+                if(EnemyState[i][j]==0)
                     EnemyButtonMatrix[i][j].setEnabled(true);
-            }
     }
 
     public boolean GameEnded() {
@@ -352,37 +352,27 @@ public class Client {
         return false;
     }
 
-    public void RecieveFirstShot() {
-        try {
-            MySocket=new Socket(Address,Port);
-            ObjectOutputStream oos=new ObjectOutputStream(MySocket.getOutputStream());
-            ObjectInputStream ois=new ObjectInputStream(MySocket.getInputStream());
-            oos.writeObject(new Message(0, 0, 2));
-            oos.flush();
-            //I am ready to recieve the first shot
-            RecieveShot();        
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
     public void RecieveShot() {
         try {
-            ObjectOutputStream oos=new ObjectOutputStream(MySocket.getOutputStream());
-            ObjectInputStream ois=new ObjectInputStream(MySocket.getInputStream());
-            
+            MySocket=new Socket(Address,Port);
+            oos=new ObjectOutputStream(MySocket.getOutputStream());
+            oos.writeObject(new Message(0, 0, 2));
+            oos.flush();
+            ois=new ObjectInputStream(MySocket.getInputStream());
             Message M=(Message)ois.readObject();
             if(MyState[M.y][M.x]==1){
                 MyState[M.y][M.x]=2;
-                MyButtonMatrix[M.y][M.x].setBackground(new Color(0,0,0));
+                MyButtonMatrix[M.y][M.x].setBackground(Color.decode("#b50303"));
                 MyRemainingSquares--;
                 oos.writeObject(new Answer(true));
             }
             else{
                 MyState[M.y][M.x]=3;
-                MyButtonMatrix[M.y][M.x].setBackground(new Color(255,255,255));
+                Color C=MyButtonMatrix[M.y][M.x].getBackground();
+                MyButtonMatrix[M.y][M.x].setBackground(new Color(Math.abs(C.getRed()-100),Math.abs(C.getGreen()-100),Math.abs(C.getBlue()-100)));
                 oos.writeObject(new Answer(false));
             }
+            oos.flush();
             EnableBoard();
         } catch (Exception e) {
             e.printStackTrace();
